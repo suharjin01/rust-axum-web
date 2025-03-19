@@ -1,6 +1,7 @@
 use axum::{extract::Request, routing::{get, post}, serve, Router};
 use axum_extra::response;
 use axum_test::TestServer;
+use http::{Method, Uri};
 use tokio::net::TcpListener;
 
 // Setup
@@ -75,5 +76,28 @@ async fn test_request() {
     let response = server.post("/post").await;
     response.assert_status_ok();
     response.assert_text("Hello POST");
+}
+
+
+// Extractor
+#[tokio::test]
+async fn test_uri() {
+    async fn hello_world(uri: Uri, method: Method) -> String {
+        format!("Hello {} {}", method, uri.path())
+    }
+
+    let app = Router::new()
+        .route("/get", get(hello_world))
+        .route("/post", post(hello_world));
+
+    let server = TestServer::new(app).unwrap();
+
+    let response = server.get("/get").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET /get");
+
+    let response = server.post("/post").await;
+    response.assert_status_ok();
+    response.assert_text("Hello POST /post");
 
 }
