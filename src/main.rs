@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::{extract::{Query, Request}, routing::{get, post}, serve, Router};
+use axum::{extract::{Path, Query, Request}, routing::{get, post}, serve, Router};
 use axum_extra::response;
 use axum_test::TestServer;
 use http::{HeaderMap, Method, Uri};
@@ -145,3 +145,22 @@ async fn test_query() {
         response.assert_text("Hello Aqil");
     
     }
+
+
+// Path Paraneter Extractor
+#[tokio::test]
+async fn test_path_parameter() {
+    async fn hello_world(Path((id, id_category)) : Path<(String, String)>) -> String {
+        format!("Product {}, Category {}", id, id_category)
+    }
+    
+    let app = Router::new()
+        .route("/products/{id}/categories/{id_category}", get(hello_world));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/products/1/categories/3").await;
+    response.assert_status_ok();
+    response.assert_text("Product 1, Category 3");
+    
+}
