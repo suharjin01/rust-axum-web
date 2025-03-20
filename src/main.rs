@@ -1,7 +1,9 @@
-use axum::{extract::Request, routing::{get, post}, serve, Router};
+use std::collections::HashMap;
+
+use axum::{extract::{Query, Request}, routing::{get, post}, serve, Router};
 use axum_extra::response;
 use axum_test::TestServer;
-use http::{Method, Uri};
+use http::{HeaderMap, Method, Uri};
 use tokio::net::TcpListener;
 
 // Setup
@@ -101,3 +103,45 @@ async fn test_uri() {
     response.assert_text("Hello POST /post");
 
 }
+
+
+// Common Extractor
+    // Query Parameter
+#[tokio::test]
+async fn test_query() {
+    async fn hello_world(Query(params) : Query<HashMap<String, String>>) -> String {
+        let name = params.get("name").unwrap();
+        format!("Hello {}", name)
+    }
+
+    let app = Router::new()
+        .route("/get", get(hello_world));
+
+    let server = TestServer::new(app).unwrap();
+
+    let response = server.get("/get").add_query_param("name", "Aqil").await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+
+}
+
+
+// Common Extractor
+    // Header Extractor
+    #[tokio::test]
+    async fn test_header() {
+        async fn hello_world(headers: HeaderMap) -> String {
+            let name = headers["name"].to_str().unwrap();
+            format!("Hello {}", name)
+        }
+    
+        let app = Router::new()
+            .route("/get", get(hello_world));
+    
+        let server = TestServer::new(app).unwrap();
+    
+        let response = server.get("/get").add_header("name", "Aqil").await;
+        response.assert_status_ok();
+        response.assert_text("Hello Aqil");
+    
+    }
