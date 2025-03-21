@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use axum::{extract::{Path, Query, Request}, routing::{get, post}, serve, Router};
-use axum_extra::response;
+use axum::{extract::{rejection::JsonRejection, Path, Query, Request}, routing::{get, post}, serve, Json, Router};
+use axum_extra::{body, response};
 use axum_test::TestServer;
-use http::{HeaderMap, Method, Uri};
+use http::{request, HeaderMap, Method, Uri};
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
 // Setup
@@ -162,5 +163,90 @@ async fn test_path_parameter() {
     let response = server.get("/products/1/categories/3").await;
     response.assert_status_ok();
     response.assert_text("Product 1, Category 3");
+    
+}
+
+
+// Body Extractor
+#[tokio::test]
+async fn test_body_string() {
+    async fn hello_world(body: String) -> String {
+        format!("Body {}", body)
+    }
+    
+    let app = Router::new()
+        .route("/post", post(hello_world));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.post("/post").text("This is body").await;
+    response.assert_status_ok();
+    response.assert_text("Body This is body");
+    
+}
+
+// Json body extractor
+#[derive(Debug, Serialize, Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+#[tokio::test]
+async fn test_json_body() {
+    async fn hello_world(Json(request) : Json<LoginRequest>) -> String {
+        format!("Hello {}", request.username)
+    }
+    
+    let app = Router::new()
+        .route("/post", post(hello_world));
+
+    let request = LoginRequest {
+        username: "Aqil".to_string(),
+        password: "12345".to_string(),
+    };
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.post("/post").json(&request).await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+    
+}
+
+
+// Json Error
+#[tokio::test]
+async fn test_json_error() {
+    async fn hello_world(payload: Result<Json<LoginRequest>, JsonRejection>) -> String {
+        match payload {
+            Ok(request) => {
+                format!("Hello {}", request.username)
+            }
+            Err(error) => {
+                format!("Error {:?}", error)
+            }
+        }
+    }
+    
+    let app = Router::new()
+        .route("/post", post(hello_world));
+
+    let request = LoginRequest {
+        username: "Aqil".to_string(),
+        password: "<PASSWORD>".to_string(),
+    };
+    
+    let server = TestServer::new(app).unwrap();
+    
+    // menggunakan json yang valid
+    let response = server.post("/post").json(&request).await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+
+    // menngunakan json yang tidak valid
+    let response = server.post("/post").text("tidak valid").await;
+    response.assert_status_ok();
+    response.assert_text("Error MissingJsonContentType(MissingJsonContentType");
     
 }
