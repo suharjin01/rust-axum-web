@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::{body::Body, extract::{rejection::JsonRejection, Path, Query, Request}, response::Response, routing::{get, post}, serve, Json, Router};
+use axum::{body::Body, extract::{rejection::JsonRejection, Path, Query, Request}, response::Response, routing::{get, post}, serve, Form, Json, Router};
 use axum_extra::{body, response};
 use axum_test::TestServer;
 use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
@@ -351,4 +351,28 @@ async fn test_response_tuple3() {
     response.assert_status_ok();
     response.assert_text("{\"token\":\"token\"}"); 
     response.assert_header("X-Owner", "Aqil"); 
+}
+
+
+// Form Request
+#[tokio::test]
+async fn test_form() {
+    async fn hello_world(Form(request) : Form<LoginRequest>) -> String {
+        format!("Hello {}", request.username)
+    }
+    
+    let app = Router::new()
+        .route("/post", post(hello_world));
+
+    let request = LoginRequest {
+        username: "Aqil".to_string(),
+        password: "12345".to_string(),
+    };
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.post("/post").form(&request).await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+    
 }
