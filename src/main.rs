@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use axum::{body::{Body, Bytes}, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, response::Response, routing::{get, post}, serve, Form, Json, Router};
-use axum_extra::{body, response};
+use axum_extra::{body, extract::{cookie::{self, Cookie}, CookieJar}, response};
 use axum_test::{multipart::{MultipartForm, Part}, TestServer};
 use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
@@ -408,6 +408,52 @@ async fn test_multipart() {
     let server = TestServer::new(app).unwrap();
     
     let response = server.post("/post").multipart(request).await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+    
+}
+
+
+// Cookie
+#[tokio::test]
+async fn test_cookie_response() {
+    async fn hello_world(query: Query<HashMap<String, String>>) -> (CookieJar, String) {
+        let name = query.get("name").unwrap();
+
+        (
+            CookieJar::new().add(Cookie::new("name", name.clone())),
+            format!("Hello {}", name.clone()),
+        )
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").add_query_param("name", "Aqil").await;
+    response.assert_status_ok();
+    response.assert_text("Hello Aqil");
+    response.assert_header("Set-Cookie", "name=Aqil");
+    
+}
+
+
+// cookie request
+#[tokio::test]
+async fn test_cookie_request() {
+    async fn hello_world(cookie: CookieJar) -> String {
+        let name = cookie.get("name").unwrap().value();
+
+        format!("Hello {}", name)
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").add_header("Cookie", "name=Aqil").await;
     response.assert_status_ok();
     response.assert_text("Hello Aqil");
     
