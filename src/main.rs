@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::{body::{Body, Bytes}, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, response::Response, routing::{get, post}, serve, Form, Json, Router};
+use axum::{body::{Body, Bytes}, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, middleware::{from_fn, map_request, Next}, response::Response, routing::{get, post}, serve, Form, Json, Router};
 use axum_extra::{body, extract::{cookie::{self, Cookie}, CookieJar}, response};
 use axum_test::{multipart::{MultipartForm, Part}, TestServer};
 use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
@@ -456,5 +456,44 @@ async fn test_cookie_request() {
     let response = server.get("/get").add_header("Cookie", "name=Aqil").await;
     response.assert_status_ok();
     response.assert_text("Hello Aqil");
+    
+}
+
+
+// Middleware
+async fn log_middleware(request: Request, next: Next) -> Response {
+    println!("Recieve request {} {}", request.method(), request.uri());
+    let response = next.run(request).await;
+    println!("Sen response {}", response.status());
+    response
+}
+
+async fn request_id_middleware<T>(mut request: Request<T>) -> Request<T> {
+    let request_id = "12345";
+    request
+        .headers_mut()
+        .insert("X-Request-Id", request_id.parse().unwrap());
+    request
+}
+
+#[tokio::test]
+async fn test_middleware() {
+    async fn hello_world(method: Method, header_map: HeaderMap) -> String {
+        println!("Execute handler");
+        let request_id = header_map.get("X-Request-Id").unwrap().to_str().unwrap();
+
+        format!("Hello {} {}", method, request_id)
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world))
+        .layer(map_request(request_id_middleware))
+        .layer(from_fn(log_middleware));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").add_header("Cookie", "name=Aqil").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET 12345");
     
 }
