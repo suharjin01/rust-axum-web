@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use axum::{body::{Body, Bytes}, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, middleware::{from_fn, map_request, Next}, response::Response, routing::{get, post}, serve, Form, Json, Router};
+use anyhow::anyhow;
+use axum::{body::{Body, Bytes}, error_handling::HandleError, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, middleware::{from_fn, map_request, Next}, response::{IntoResponse, Response}, routing::{get, post}, serve, Form, Json, Router};
 use axum_extra::{body, extract::{cookie::{self, Cookie}, CookieJar}, response};
 use axum_test::{multipart::{MultipartForm, Part}, TestServer};
 use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
@@ -496,4 +497,78 @@ async fn test_middleware() {
     response.assert_status_ok();
     response.assert_text("Hello GET 12345");
     
+}
+
+
+// Error Handling
+struct AppError {
+    code: i32,
+    message: String,
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::from_u16(self.code as u16).unwrap(),
+            self.message,
+        )
+
+            .into_response()
+    }
+}
+
+#[tokio::test]
+async fn test_error_handling() {
+    async fn hello_world(method: Method) -> Result<String, AppError> {
+        if method == Method::POST {
+            Ok("OK".to_string())
+        } else {
+            Err(AppError { 
+                code: 400, 
+                message: "Bad Request".to_string(), 
+            })
+        }
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world))
+        .route("/post", post(hello_world));
+    
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").await;
+    response.assert_status(StatusCode::BAD_REQUEST);
+    response.assert_text("Bad Request");
+    
+}
+
+// unexpected error
+#[tokio::test]
+async fn test_unexpected_eeror() {
+    async fn route(request: Request) -> Result<Response, anyhow::Error> {
+        if request.method() == Method::POST {
+            Ok(Response::builder().status(StatusCode::OK).body(Body::from("OK"))?)
+        } else {
+            //Err(anyhow::Error::msg("Bad Request"))
+            Err(anyhow!("Bad Request"))
+        }
+    }
+
+    async fn handle_error(err: anyhow::Error) -> (StatusCode, String) {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Internal Server Error : {}", err),
+        )
+    }
+
+    let route_service = tower::service_fn(route);
+
+    let app = Router::new()
+        .route_service("/get", HandleError::new(route_service, handle_error));
+
+    let server = TestServer::new(app).unwrap();
+    let response = server.get("/get").await;
+    response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    response.assert_text("Internal Server Error : Bad Request");
+
 }
