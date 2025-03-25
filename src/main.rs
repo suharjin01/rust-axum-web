@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
-use axum::{body::{Body, Bytes}, error_handling::HandleError, extract::{rejection::JsonRejection, Multipart, Path, Query, Request}, middleware::{from_fn, map_request, Next}, response::{IntoResponse, Response}, routing::{get, post}, serve, Form, Json, Router};
+use axum::{body::{Body, Bytes}, error_handling::HandleError, extract::{rejection::JsonRejection, Multipart, Path, Query, Request, State}, middleware::{from_fn, map_request, Next}, response::{IntoResponse, Response}, routing::{get, post}, serve, Extension, Form, Json, Router};
 use axum_extra::{body, extract::{cookie::{self, Cookie}, CookieJar}, response};
 use axum_test::{multipart::{MultipartForm, Part}, TestServer};
 use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
@@ -571,4 +571,79 @@ async fn test_unexpected_eeror() {
     response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
     response.assert_text("Internal Server Error : Bad Request");
 
+}
+
+
+// State
+// state extractor
+struct DatabaseConfig {
+    total: i32
+}
+
+#[tokio::test]
+async fn test_state_extractor() {
+    let database_state = Arc::new(DatabaseConfig{total: 100});
+
+    async fn hello_world(State(database) : State<Arc<DatabaseConfig>>) -> String {
+        
+        format!("Total {}", database.total)
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world))
+        .with_state(database_state);
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").await;
+    response.assert_status_ok();
+    response.assert_text("Total 100");
+    
+}
+
+// state extension
+#[tokio::test]
+async fn test_state_extension() {
+    let database_state = Arc::new(DatabaseConfig{total: 100});
+
+    async fn hello_world(Extension(database) : Extension<Arc<DatabaseConfig>>) -> String {
+        
+        format!("Total {}", database.total)
+    }
+    
+    let app = Router::new()
+        .route("/get", get(hello_world))
+        .layer(Extension(database_state));
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").await;
+    response.assert_status_ok();
+    response.assert_text("Total 100");
+    
+}
+
+// closure capture
+#[tokio::test]
+async fn test_state_closure_capture() {
+    let database_state = Arc::new(DatabaseConfig{total: 100});
+
+    async fn hello_world(database : Arc<DatabaseConfig>) -> String {
+        
+        format!("Total {}", database.total)
+    }
+    
+    let app = Router::new()
+        .route("/get", get({
+            let database_state = Arc::clone(&database_state);
+            move || hello_world(database_state)
+        }))
+        .layer(Extension(database_state));
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/get").await;
+    response.assert_status_ok();
+    response.assert_text("Total 100");
+    
 }
