@@ -702,3 +702,56 @@ async fn test_multiple_route_nest() {
     response.assert_text("Hello GET");
     
 }
+
+
+// Fallback
+#[tokio::test]
+async fn test_fallback() {
+    async fn hello_world(method: Method) -> String {
+        
+        format!("Hello {}", method)
+    }
+
+    async fn fallback(request: Request) -> (StatusCode, String) {
+        (
+            StatusCode::NOT_FOUND,
+            format!("Page {} is not found", request.uri().path()),
+        )
+    }
+
+    // method not allowed fallback
+    async fn not_allowed(request: Request) -> (StatusCode, String) {
+        (
+            StatusCode::METHOD_NOT_ALLOWED,
+            format!("Page {} is not found", request.uri().path()),
+        )
+    }
+
+    let first = Router::new().route("/first", get(hello_world));
+    let second = Router::new().route("/second", get(hello_world));
+    
+    let app = Router::new()
+        .merge(first)
+        .merge(second)
+        .fallback(fallback)
+        .method_not_allowed_fallback(not_allowed);
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/first").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
+
+    let response = server.get("/second").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
+
+    let response = server.get("/wrong").await;
+    response.assert_status_not_found();
+    response.assert_text("Page /wrong is not found");
+
+    let response = server.post("/first").await;
+    response.assert_status(StatusCode::METHOD_NOT_ALLOWED);
+    response.assert_text("Page /first is not found");
+    
+}
