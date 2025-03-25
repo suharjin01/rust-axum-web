@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use axum::{body::{Body, Bytes}, error_handling::HandleError, extract::{rejection::JsonRejection, Multipart, Path, Query, Request, State}, middleware::{from_fn, map_request, Next}, response::{IntoResponse, Response}, routing::{get, post}, serve, Extension, Form, Json, Router};
 use axum_extra::{body, extract::{cookie::{self, Cookie}, CookieJar}, response};
 use axum_test::{multipart::{MultipartForm, Part}, TestServer};
-use http::{header, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use http::{header, method, request, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
@@ -645,5 +645,60 @@ async fn test_state_closure_capture() {
     let response = server.get("/get").await;
     response.assert_status_ok();
     response.assert_text("Total 100");
+    
+}
+
+
+// Multiple Router
+#[tokio::test]
+async fn test_multiple_route() {
+    async fn hello_world(method: Method) -> String {
+        
+        format!("Hello {}", method)
+    }
+
+    let first = Router::new().route("/first", get(hello_world));
+    let second = Router::new().route("/second", get(hello_world));
+    
+    let app = Router::new()
+        .merge(first)
+        .merge(second);
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/first").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
+
+    let response = server.get("/second").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
+    
+}
+
+// nest multiple router
+#[tokio::test]
+async fn test_multiple_route_nest() {
+    async fn hello_world(method: Method) -> String {
+        
+        format!("Hello {}", method)
+    }
+
+    let first = Router::new().route("/first", get(hello_world));
+    let second = Router::new().route("/second", get(hello_world));
+    
+    let app = Router::new()
+        .nest("/api/users", first)
+        .nest("/api/products", second);
+
+    let server = TestServer::new(app).unwrap();
+    
+    let response = server.get("/api/users/first").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
+
+    let response = server.get("/api/products/second").await;
+    response.assert_status_ok();
+    response.assert_text("Hello GET");
     
 }
